@@ -1,14 +1,14 @@
 # Local Project Gateway
 
-Readonly local project gateway plus OAuth-protected HTTP MCP endpoint for ChatGPT custom MCP integration.
+Local project gateway plus OAuth-protected HTTP MCP endpoint for ChatGPT custom MCP integration.
 
 ## Architecture
 
 - **ChatGPT**: control, review, and validation.
 - **Local coding agent / user shell**: writes files, runs mutating commands, installs dependencies, and manages services.
-- **HTTP MCP server**: readonly project observation plus predefined readonly diagnostics.
+- **HTTP MCP server**: readonly project observation, predefined readonly diagnostics, and controlled OpenCode execution.
 
-The MCP server is not a remote shell. It must not expose remote file write, delete, arbitrary shell, git mutation, dependency install, or service install operations.
+The MCP server is not a remote shell. It must not expose remote file write, delete, arbitrary shell, caller-supplied command / args / cwd, automatic git commit / push, npm install, service install, token, ssh key, or env file access.
 
 ## File Layout
 
@@ -18,6 +18,7 @@ mcp-http-server.mjs                     # HTTP MCP bootstrap entry
 scripts/start-local.mjs                 # starts gateway + MCP, optionally cloudflared
 src/dotenv-local.mjs                    # .env.local loader
 src/config.mjs                          # HTTP MCP config and constants
+src/projects.mjs                        # shared project whitelist loader
 src/oauth.mjs                           # OAuth / DCR / token logic
 src/run-op.mjs                          # thin run_op entrypoint
 src/run-op/registry.mjs                 # run_op id -> diagnostic script registry
@@ -32,6 +33,7 @@ src/run-op/scripts/logs.mjs             # bounded log tail diagnostics
 src/run-op/scripts/cloudflared.mjs      # Cloudflare Tunnel diagnostics
 src/run-op/scripts/git.mjs              # readonly git diagnostics
 src/run-op/scripts/npm.mjs              # readonly npm diagnostics
+src/oc-jobs.mjs                         # controlled OpenCode job runner
 src/http-app.mjs                        # Express app and routes
 src/mcp/result.mjs                      # MCP result helpers
 src/mcp/gateway-request.mjs             # gateway request helper
@@ -41,6 +43,8 @@ src/mcp/tools/list-tree.mjs             # list_tree tool
 src/mcp/tools/read-file.mjs             # read_file tool
 src/mcp/tools/read-image.mjs            # read_image tool
 src/mcp/tools/run-op-tool.mjs           # run_op tool
+src/mcp/tools/oc-run-tool.mjs           # oc_run tool
+src/mcp/tools/oc-get-tool.mjs           # oc_get tool
 projects.example.json                   # safe empty example project config
 projects.local.json                     # local-only project config, ignored by git
 .env.example                            # safe env template
@@ -97,9 +101,13 @@ list_tree
 read_file
 read_image
 run_op
+oc_run
+oc_get
 ```
 
 `read_image` reads supported image files through the existing readonly gateway image endpoint. It returns a small JSON metadata text block plus MCP image content using base64 data and the detected MIME type.
+
+`read_file` and `read_image` cannot access `_agent_jobs`. `oc_get` is the dedicated bounded channel for reading OpenCode job status and output.
 
 ## run_op Diagnostics
 
@@ -138,6 +146,49 @@ status_services
 ```
 
 Output is bounded and redacted for common token, secret, password, private-key, and credentials-path patterns.
+
+## OpenCode Bridge
+
+`oc_run` is a controlled OpenCode execution bridge. It is not arbitrary shell.
+
+`oc_run` accepts only:
+
+```json
+{
+  "projectId": "my-project",
+  "prompt": "Run a small validation task and report the result.",
+  "timeoutSeconds": 1800
+}
+```
+
+Execution is fixed to this shape:
+
+```text
+opencode run --dir <projectRoot> <prompt>
+```
+
+Security boundaries:
+
+- `projectId` must exist in the project whitelist config.
+- The caller cannot pass command, args, shell string, or arbitrary cwd.
+- `prompt` is capped at 12000 characters for the first Windows-safe implementation.
+- `timeoutSeconds` defaults to 1800 and is capped at 3600.
+- The bridge does not automatically git commit, git push, npm install, or install services.
+- A safety prefix is injected before the user prompt to tell OpenCode not to read or print env variables, tokens, secrets, SSH keys, private keys, OAuth credentials, Cloudflare credentials, or local credential files.
+- stdout, stderr, and result text are written under `_agent_jobs/` with redaction applied.
+- `oc_get` returns bounded tails only: stdout up to 8000 characters, stderr up to 8000 characters, and result text up to 12000 characters.
+
+`oc_run` returns a `jobId`. `oc_get` accepts that `jobId` and returns status:
+
+```text
+queued
+running
+done
+failed
+timeout
+```
+
+`done` only means the OpenCode process exited with code 0. It does not mean ChatGPT review passed.
 
 ## OAuth
 
@@ -195,7 +246,7 @@ Run static syntax checks:
 npm run check
 ```
 
-`npm run check` covers the gateway, MCP server, OAuth modules, all split `run_op` modules under `src/run-op/`, and MCP tool modules.
+`npm run check` covers the gateway, MCP server, OAuth modules, shared project whitelist loader, OpenCode bridge, all split `run_op` modules under `src/run-op/`, and MCP tool modules.
 
 Start local gateway + MCP HTTP:
 
@@ -240,6 +291,6 @@ Expected public `/mcp` result without token:
 
 1. ChatGPT reviews code, architecture, diffs, and evidence.
 2. Local coding agent or user shell performs file writes, mutating commands, installs, and restarts.
-3. MCP provides readonly observation and fixed readonly diagnostics.
-4. ChatGPT reviews evidence and requests rework if needed.
+3. MCP provides readonly observation, fixed readonly diagnostics, and controlled OpenCode execution.
+4. ChatGPT reads bounded OpenCode job output through `oc_get` and requests rework if needed.
 5. User accepts only after review passes.
