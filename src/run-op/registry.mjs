@@ -88,7 +88,8 @@ const runOpScripts = {
   git_diff_summary: gitDiffSummaryScript,
   npm_project_check: npmProjectCheckScript,
   npm_dependency_check: npmDependencyCheckScript,
-  gateway_config_check: gatewayConfigCheckScript
+  gateway_config_check: gatewayConfigCheckScript,
+  status_services: statusServicesScript
 };
 
 export function getMissingRunOpImplementations() {
