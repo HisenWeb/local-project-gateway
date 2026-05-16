@@ -15,7 +15,11 @@ const MAX_TIMEOUT_SECONDS = 3600;
 const STDOUT_TAIL_CHARS = 8000;
 const STDERR_TAIL_CHARS = 8000;
 const RESULT_TEXT_CHARS = 12000;
-const MAX_PROMPT_CHARS = 80_000;
+const MAX_PROMPT_CHARS = 12_000;
+const SAFETY_PREFIX = `Safety boundary for this local OpenCode job:
+- Do not read, print, copy, or summarize environment variables, tokens, secrets, SSH keys, private keys, OAuth credentials, Cloudflare credentials, or local credential files.
+- Do not run git commit, git push, npm install, service install, or destructive commands unless the user explicitly requested that outside this bridge.
+- Keep the result focused on the requested work and validation evidence.`;
 
 function isoCompact(date) {
   const pad = (value) => String(value).padStart(2, "0");
@@ -51,6 +55,17 @@ async function writeJsonAtomic(filePath, value) {
 async function readJsonFile(filePath) {
   const raw = await fs.readFile(filePath, "utf8");
   return JSON.parse(raw);
+}
+
+async function readStatusFile(jobDir) {
+  try {
+    return await readJsonFile(path.join(jobDir, "status.json"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      throw new Error("JOB_NOT_FOUND");
+    }
+    throw error;
+  }
 }
 
 async function appendRedactedLog(filePath, chunk) {
@@ -91,6 +106,10 @@ function opencodeCommand() {
   return process.platform === "win32" ? "opencode.cmd" : "opencode";
 }
 
+function buildEffectivePrompt(prompt) {
+  return `${SAFETY_PREFIX}\n\nUser task:\n${prompt}`;
+}
+
 export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   const normalizedProjectId = String(projectId || "").trim();
   const normalizedPrompt = String(prompt || "").trim();
@@ -112,6 +131,7 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
     throw new Error("PROJECT_NOT_FOUND");
   }
 
+  const effectivePrompt = buildEffectivePrompt(normalizedPrompt);
   const timeout = clampTimeoutSeconds(timeoutSeconds);
   const jobId = createJobId();
   const jobDir = path.join(jobsRoot, jobId);
@@ -119,6 +139,7 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
 
   await fs.mkdir(jobDir, { recursive: true });
   await fs.writeFile(path.join(jobDir, "prompt.txt"), normalizedPrompt, "utf8");
+  await fs.writeFile(path.join(jobDir, "effective-prompt.txt"), effectivePrompt, "utf8");
 
   const baseStatus = {
     jobId,
@@ -136,7 +157,6 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   await writeJsonAtomic(path.join(jobDir, "job.json"), {
     jobId,
     projectId: project.id,
-    projectRoot: project.root,
     command: "opencode run --dir <projectRoot> <prompt>",
     timeoutSeconds: timeout,
     createdAt
@@ -146,7 +166,7 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   await fs.writeFile(path.join(jobDir, "stderr.log"), "", "utf8");
   await fs.writeFile(path.join(jobDir, "result.txt"), "", "utf8");
 
-  const child = spawn(opencodeCommand(), ["run", "--dir", project.root, normalizedPrompt], {
+  const child = spawn(opencodeCommand(), ["run", "--dir", project.root, effectivePrompt], {
     cwd: project.root,
     shell: false,
     windowsHide: true,
@@ -222,7 +242,7 @@ export async function getOpenCodeJob(jobId) {
     throw new Error("INVALID_JOB_ID");
   }
 
-  const status = await readJsonFile(path.join(jobDir, "status.json"));
+  const status = await readStatusFile(jobDir);
   const stdoutTail = await readTail(path.join(jobDir, "stdout.log"), STDOUT_TAIL_CHARS);
   const stderrTail = await readTail(path.join(jobDir, "stderr.log"), STDERR_TAIL_CHARS);
   const resultText = await readResultText(jobDir, stdoutTail);
