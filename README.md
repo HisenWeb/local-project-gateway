@@ -39,6 +39,7 @@ src/mcp/server.mjs                      # MCP server factory
 src/mcp/tools/list-projects.mjs         # list_projects tool
 src/mcp/tools/list-tree.mjs             # list_tree tool
 src/mcp/tools/read-file.mjs             # read_file tool
+src/mcp/tools/read-image.mjs            # read_image tool
 src/mcp/tools/run-op-tool.mjs           # run_op tool
 projects.example.json                   # safe empty example project config
 projects.local.json                     # local-only project config, ignored by git
@@ -94,10 +95,11 @@ MCP tools:
 list_projects
 list_tree
 read_file
+read_image
 run_op
 ```
 
-`read_image` is handled by the gateway image endpoint. Add it as a MCP tool only if needed after local validation.
+`read_image` reads supported image files through the existing readonly gateway image endpoint. It returns a small JSON metadata text block plus MCP image content using base64 data and the detected MIME type.
 
 ## run_op Diagnostics
 
@@ -193,7 +195,7 @@ Run static syntax checks:
 npm run check
 ```
 
-`npm run check` covers the gateway, MCP server, OAuth modules, and all split `run_op` modules under `src/run-op/`.
+`npm run check` covers the gateway, MCP server, OAuth modules, all split `run_op` modules under `src/run-op/`, and MCP tool modules.
 
 Start local gateway + MCP HTTP:
 
