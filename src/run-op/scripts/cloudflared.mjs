@@ -63,11 +63,11 @@ foreach ($ConfigPath in $ConfigCandidates) {
   Write-Output "Candidate=$ConfigPath Exists=$(Test-Path $ConfigPath)"
   if (Test-Path $ConfigPath) {
     Write-Output '--- selected non-secret config keys ---'
-    Select-String -Path $ConfigPath -Pattern '^\\s*(tunnel|credentials-file|ingress|hostname|service):' -ErrorAction SilentlyContinue |
+    Select-String -Path $ConfigPath -Pattern '^\s*(tunnel|credentials-file|ingress|hostname|service):' -ErrorAction SilentlyContinue |
       ForEach-Object {
         $Line = $_.Line
-        $Line = $Line -replace '(?i)^(\\s*tunnel\\s*:\\s*).+$', '$1[REDACTED]'
-        $Line = $Line -replace '(?i)^(\\s*credentials-file\\s*:\\s*).+$', '$1[REDACTED_PATH]'
+        $Line = $Line -replace '(?i)^(\s*tunnel\s*:\s*).+$', '$1[REDACTED]'
+        $Line = $Line -replace '(?i)^(\s*credentials-file\s*:\s*).+$', '$1[REDACTED_PATH]'
         Write-Output $Line
       }
   }
