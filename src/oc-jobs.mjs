@@ -53,8 +53,9 @@ async function readJsonFile(filePath) {
   return JSON.parse(raw);
 }
 
-async function appendLog(filePath, chunk) {
-  await fs.appendFile(filePath, chunk);
+async function appendRedactedLog(filePath, chunk) {
+  const text = redactSensitiveOutput(chunk.toString("utf8"));
+  await fs.appendFile(filePath, text, "utf8");
 }
 
 async function readTail(filePath, maxChars) {
@@ -86,7 +87,8 @@ async function updateStatus(jobDir, patch) {
 }
 
 function opencodeCommand() {
-  return process.env.OPENCODE_BIN || "opencode";
+  if (process.env.OPENCODE_BIN) return process.env.OPENCODE_BIN;
+  return process.platform === "win32" ? "opencode.cmd" : "opencode";
 }
 
 export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
@@ -169,14 +171,14 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
 
   child.stdout.on("data", (chunk) => {
     const at = nowIso();
-    appendLog(path.join(jobDir, "stdout.log"), chunk).catch(() => {});
-    appendLog(path.join(jobDir, "result.txt"), chunk).catch(() => {});
+    appendRedactedLog(path.join(jobDir, "stdout.log"), chunk).catch(() => {});
+    appendRedactedLog(path.join(jobDir, "result.txt"), chunk).catch(() => {});
     updateStatus(jobDir, { lastOutputAt: at }).catch(() => {});
   });
 
   child.stderr.on("data", (chunk) => {
     const at = nowIso();
-    appendLog(path.join(jobDir, "stderr.log"), chunk).catch(() => {});
+    appendRedactedLog(path.join(jobDir, "stderr.log"), chunk).catch(() => {});
     updateStatus(jobDir, { lastOutputAt: at }).catch(() => {});
   });
 
@@ -192,6 +194,7 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   });
 
   child.on("close", (code) => {
+    if (finished && !timedOut) return;
     clearTimeout(timeoutTimer);
     finished = true;
     updateStatus(jobDir, {
