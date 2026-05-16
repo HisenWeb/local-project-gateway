@@ -1,0 +1,29 @@
+# local secrets
+.env
+.env.*
+!.env.example
+oauth-clients.local.json
+projects.local.json
+*.local
+
+# logs / runtime output
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+_agent_jobs/
+
+# backups
+backup/
+backups/
+*.bak.*
+
+# node
+node_modules/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

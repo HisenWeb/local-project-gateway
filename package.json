@@ -1,0 +1,23 @@
+{
+  "name": "local-project-gateway",
+  "version": "1.0.0",
+  "description": "Readonly local project gateway plus OAuth-protected HTTP MCP endpoint.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node ./scripts/start-local.mjs",
+    "start:public": "node ./scripts/start-local.mjs --with-cloudflared",
+    "gateway": "node ./server.js",
+    "mcp:http": "node ./mcp-http-server.mjs",
+    "check": "node --check ./server.js && node --check ./mcp-http-server.mjs && node --check ./scripts/start-local.mjs && node --check ./src/dotenv-local.mjs && node --check ./src/config.mjs && node --check ./src/oauth.mjs && node --check ./src/run-op.mjs && node --check ./src/http-app.mjs && node --check ./src/mcp/result.mjs && node --check ./src/mcp/gateway-request.mjs && node --check ./src/mcp/server.mjs && node --check ./src/mcp/tools/list-projects.mjs && node --check ./src/mcp/tools/list-tree.mjs && node --check ./src/mcp/tools/read-file.mjs && node --check ./src/mcp/tools/run-op-tool.mjs",
+    "test": "npm run check"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
+    "zod": "^4.4.3"
+  }
+}
