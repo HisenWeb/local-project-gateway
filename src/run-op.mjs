@@ -261,9 +261,10 @@ foreach ($ConfigPath in $ConfigCandidates) {
     Write-Output '--- selected non-secret config keys ---'
     Select-String -Path $ConfigPath -Pattern '^\s*(tunnel|credentials-file|ingress|hostname|service):' -ErrorAction SilentlyContinue |
       ForEach-Object {
-        $_.Line `
-          -replace '(?i)^(\s*tunnel\s*:\s*).+$', '$1[REDACTED]' `
-          -replace '(?i)^(\s*credentials-file\s*:\s*).+$', '$1[REDACTED_PATH]'
+        $Line = $_.Line
+        $Line = $Line -replace '(?i)^(\s*tunnel\s*:\s*).+$', '$1[REDACTED]'
+        $Line = $Line -replace '(?i)^(\s*credentials-file\s*:\s*).+$', '$1[REDACTED_PATH]'
+        Write-Output $Line
       }
   }
 }
