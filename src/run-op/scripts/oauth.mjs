@@ -1,5 +1,15 @@
 import { section } from "./common.mjs";
 
+export function mcpPublicSmokeScript() {
+  return section(
+    "Public MCP smoke",
+    `Write-Output '--- public /health ---'
+curl.exe -i "$PublicBaseUrl/health"
+Write-Output '--- public /mcp without token, expected 401 authorization_required ---'
+curl.exe -i "$PublicBaseUrl$McpPath"`
+  );
+}
+
 export function oauthMetadataScript() {
   return section(
     "OAuth metadata",
