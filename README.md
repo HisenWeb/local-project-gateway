@@ -19,7 +19,19 @@ scripts/start-local.mjs                 # starts gateway + MCP, optionally cloud
 src/dotenv-local.mjs                    # .env.local loader
 src/config.mjs                          # HTTP MCP config and constants
 src/oauth.mjs                           # OAuth / DCR / token logic
-src/run-op.mjs                          # readonly diagnostic run_op implementation
+src/run-op.mjs                          # thin run_op entrypoint
+src/run-op/registry.mjs                 # run_op id -> diagnostic script registry
+src/run-op/runner.mjs                   # bounded PowerShell diagnostic runner
+src/run-op/redact.mjs                   # diagnostic output redaction
+src/run-op/scripts/common.mjs           # shared PowerShell script helpers
+src/run-op/scripts/system.mjs           # system / process / health diagnostics
+src/run-op/scripts/network.mjs          # DNS and proxy diagnostics
+src/run-op/scripts/gateway.mjs          # gateway config and smoke diagnostics
+src/run-op/scripts/oauth.mjs            # OAuth and public MCP diagnostics
+src/run-op/scripts/logs.mjs             # bounded log tail diagnostics
+src/run-op/scripts/cloudflared.mjs      # Cloudflare Tunnel diagnostics
+src/run-op/scripts/git.mjs              # readonly git diagnostics
+src/run-op/scripts/npm.mjs              # readonly npm diagnostics
 src/http-app.mjs                        # Express app and routes
 src/mcp/result.mjs                      # MCP result helpers
 src/mcp/gateway-request.mjs             # gateway request helper
@@ -90,6 +102,8 @@ run_op
 ## run_op Diagnostics
 
 `run_op` is readonly diagnostics only. It uses fixed operation IDs, not arbitrary shell input.
+
+The public operation list lives in `src/config.mjs` as `runOpIds`. Runtime implementation is centralized in `src/run-op/registry.mjs`, which maps each allowed operation ID to a diagnostic script builder. `src/run-op.mjs` checks the registry for missing implementations before executing an operation, so a whitelist / implementation mismatch returns `RUN_OP_REGISTRY_INCOMPLETE` instead of silently exposing a broken op.
 
 Current diagnostic groups include:
 
@@ -178,6 +192,8 @@ Run static syntax checks:
 ```bash
 npm run check
 ```
+
+`npm run check` covers the gateway, MCP server, OAuth modules, and all split `run_op` modules under `src/run-op/`.
 
 Start local gateway + MCP HTTP:
 
