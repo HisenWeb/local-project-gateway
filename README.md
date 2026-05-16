@@ -1,39 +1,46 @@
 # Local Project Gateway
 
-This repository contains a readonly local project gateway and an OAuth-protected HTTP MCP server for ChatGPT custom MCP integration.
+Readonly local project gateway plus OAuth-protected HTTP MCP endpoint for ChatGPT custom MCP integration.
 
-## Architecture Overview
+## Architecture
 
-- **ChatGPT**: Total control, code review, and result validation.
-- **Local Coding Agent**: Writes files, runs commands, installs services, and performs local execution that MCP should not perform.
-- **HTTP MCP Server**: Readonly project observation plus predefined readonly diagnostic `run_op` commands.
+- **ChatGPT**: control, review, and validation.
+- **Local coding agent / user shell**: writes files, runs mutating commands, installs dependencies, and manages services.
+- **HTTP MCP server**: readonly project observation plus predefined readonly diagnostics.
 
-The MCP server must not become a remote execution layer. It does not expose remote file write, delete, arbitrary shell, `git pull`, `npm install`, or service-install operations.
+The MCP server is not a remote shell. It must not expose remote file write, delete, arbitrary shell, git mutation, dependency install, or service install operations.
 
-## Current File Layout
+## File Layout
 
 ```text
-server.js                 # readonly local project gateway on 127.0.0.1:3333
-mcp-http-server.mjs        # small HTTP MCP bootstrap entry
-src/dotenv-local.mjs       # .env.local loader
-src/config.mjs             # HTTP MCP config and constants
-src/oauth.mjs              # OAuth / DCR / token logic
-src/run-op.mjs             # readonly diagnostic run_op implementation
-src/mcp-tools.mjs          # MCP tool registration
-src/http-app.mjs           # Express app and routes
-projects.json              # demo project config
-projects.local.json        # local-only project config, ignored by git
-.env.example               # safe env template
-.env.local                 # local-only env config, ignored by git
+server.js                              # readonly local project gateway on 127.0.0.1:3333
+mcp-http-server.mjs                     # HTTP MCP bootstrap entry
+scripts/start-local.mjs                 # starts gateway + MCP, optionally cloudflared
+src/dotenv-local.mjs                    # .env.local loader
+src/config.mjs                          # HTTP MCP config and constants
+src/oauth.mjs                           # OAuth / DCR / token logic
+src/run-op.mjs                          # readonly diagnostic run_op implementation
+src/http-app.mjs                        # Express app and routes
+src/mcp/result.mjs                      # MCP result helpers
+src/mcp/gateway-request.mjs             # gateway request helper
+src/mcp/server.mjs                      # MCP server factory
+src/mcp/tools/list-projects.mjs         # list_projects tool
+src/mcp/tools/list-tree.mjs             # list_tree tool
+src/mcp/tools/read-file.mjs             # read_file tool
+src/mcp/tools/run-op-tool.mjs           # run_op tool
+projects.example.json                   # safe empty example project config
+projects.local.json                     # local-only project config, ignored by git
+.env.example                            # safe env template
+.env.local                              # local-only env config, ignored by git
 ```
 
-## Projects Configuration
+## Project Configuration
 
 Config priority:
 
 1. `PROJECTS_CONFIG` env var if set
 2. `projects.local.json` if present
-3. `projects.json` as demo fallback
+3. `projects.example.json` as safe empty fallback
 
 Use `projects.local.json` for real local absolute paths:
 
@@ -41,9 +48,9 @@ Use `projects.local.json` for real local absolute paths:
 {
   "projects": [
     {
-      "id": "demo",
-      "name": "Demo Project",
-      "root": "D:\\local-project-gateway\\demo-project"
+      "id": "my-project",
+      "name": "My Project",
+      "root": "D:\\path\\to\\project"
     }
   ]
 }
@@ -51,20 +58,23 @@ Use `projects.local.json` for real local absolute paths:
 
 Do not commit `projects.local.json`.
 
-## MCP Endpoint
-
-- MCP path: `/mcp`
-- Public resource URL: `MCP_PUBLIC_BASE_URL` + `MCP_PATH`
-- `GET /mcp` without token returning `401 authorization_required` is expected.
-
-Health and readonly gateway endpoints:
+## Gateway Endpoints
 
 ```text
 GET /health
 GET /projects
 GET /projects/:id/tree
 GET /projects/:id/file?path=...
+GET /projects/:id/image?path=...
 ```
+
+The gateway is readonly. It blocks sensitive paths such as env files, local OAuth clients, local project config, `.git`, `node_modules`, logs, agent jobs, private keys, and certificate/key files.
+
+## MCP Endpoint
+
+- MCP path: `/mcp`
+- Public resource URL: `MCP_PUBLIC_BASE_URL` + `MCP_PATH`
+- `GET /mcp` without token returning `401 authorization_required` is expected.
 
 MCP tools:
 
@@ -75,18 +85,43 @@ read_file
 run_op
 ```
 
-`run_op` is readonly diagnostics only:
+`read_image` is handled by the gateway image endpoint. Add it as a MCP tool only if needed after local validation.
+
+## run_op Diagnostics
+
+`run_op` is readonly diagnostics only. It uses fixed operation IDs, not arbitrary shell input.
+
+Current diagnostic groups include:
 
 ```text
+diagnose_all
 check_env
 check_ports
+process_node
 health_check
+gateway_smoke
+mcp_public_smoke
+oauth_metadata_check
+oauth_client_check
+dns_check
+dns_local_check
+cloudflared_diagnose
+cloudflared_service_detail
+cloudflared_config_check
+cloudflared_ingress_check
+network_proxy_check
 tail_logs
 git_remote
 git_status
 git_log_latest
+git_diff_summary
+npm_project_check
+npm_dependency_check
+gateway_config_check
 status_services
 ```
+
+Output is bounded and redacted for common token, secret, password, private-key, and credentials-path patterns.
 
 ## OAuth
 
@@ -94,7 +129,20 @@ status_services
 - Disable only for local debugging with `OAUTH_ENABLED=0`.
 - Set local approval key in `.env.local` via `OAUTH_APPROVE_KEY`.
 - DCR clients are stored in `oauth-clients.local.json`, which is ignored by git.
-- Allowed redirect origins include ChatGPT and local loopback origins.
+
+## Cloudflare Tunnel
+
+Use `.env.local` for real tunnel values:
+
+```env
+MCP_PUBLIC_BASE_URL=https://mcp.example.com
+CLOUDFLARED_EXE=D:\\cloudflared\\cloudflared.exe
+CLOUDFLARED_LOG=D:\\cloudflared\\cloudflared.log
+CLOUDFLARED_TUNNEL=replace-with-your-tunnel-uuid-or-name
+START_CLOUDFLARED=0
+```
+
+`npm start` starts only local gateway + MCP HTTP. `npm run start:public` starts local gateway + MCP HTTP + cloudflared.
 
 ## Security Notes
 
@@ -109,35 +157,45 @@ _agent_jobs/
 *.bak.*
 ```
 
-Blocked readonly gateway paths include env files, local OAuth clients, local project config, `.git`, `node_modules`, logs, agent jobs, private keys, and certificate/key files.
+`.env.example` must use placeholders only. Real domain names, tunnel IDs, tokens, OAuth secrets, and local project paths belong only in ignored local files.
 
 ## Install / Refresh Dependencies
+
+```bash
+npm install
+```
 
 After dependency changes, refresh the lock file locally:
 
 ```bash
 npm install --package-lock-only
-npm install
 ```
 
 ## Local Startup
-
-Start the readonly gateway:
-
-```bash
-npm run gateway
-```
-
-Start the HTTP MCP server:
-
-```bash
-npm run mcp:http
-```
 
 Run static syntax checks:
 
 ```bash
 npm run check
+```
+
+Start local gateway + MCP HTTP:
+
+```bash
+npm start
+```
+
+Start local gateway + MCP HTTP + cloudflared:
+
+```bash
+npm run start:public
+```
+
+Optional low-level single-service commands:
+
+```bash
+npm run gateway
+npm run mcp:http
 ```
 
 Check local health:
@@ -147,7 +205,7 @@ curl -i http://127.0.0.1:3333/health
 curl -i http://127.0.0.1:3334/health
 ```
 
-Check public tunnel health:
+Check public tunnel health with your real public domain from `.env.local`:
 
 ```bash
 curl -i https://mcp.example.com/health
@@ -160,10 +218,10 @@ Expected public `/mcp` result without token:
 401 authorization_required
 ```
 
-## ChatGPT + Local Agent Workflow
+## Workflow
 
 1. ChatGPT reviews code, architecture, diffs, and evidence.
-2. Local coding agent performs file writes, commands, installs, and restarts.
-3. MCP `run_op` provides fixed readonly diagnostics only.
+2. Local coding agent or user shell performs file writes, mutating commands, installs, and restarts.
+3. MCP provides readonly observation and fixed readonly diagnostics.
 4. ChatGPT reviews evidence and requests rework if needed.
 5. User accepts only after review passes.
