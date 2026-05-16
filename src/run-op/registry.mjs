@@ -17,6 +17,7 @@ import {
   gatewaySmokeScript
 } from "./scripts/gateway.mjs";
 import {
+  mcpPublicSmokeScript,
   oauthClientCheckScript,
   oauthMetadataScript
 } from "./scripts/oauth.mjs";
@@ -47,6 +48,7 @@ function diagnoseAllScript() {
     statusServicesScript(),
     gatewaySmokeScript(),
     healthCheckScript(),
+    mcpPublicSmokeScript(),
     oauthMetadataScript(),
     oauthClientCheckScript(),
     dnsCheckScript(),
@@ -69,7 +71,7 @@ const runOpScripts = {
   process_node: processNodeScript,
   health_check: healthCheckScript,
   gateway_smoke: gatewaySmokeScript,
-  mcp_public_smoke: oauthMetadataScript,
+  mcp_public_smoke: mcpPublicSmokeScript,
   oauth_metadata_check: oauthMetadataScript,
   oauth_client_check: oauthClientCheckScript,
   dns_check: dnsCheckScript,
