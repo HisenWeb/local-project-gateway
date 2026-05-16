@@ -11,7 +11,7 @@ export function registerOcRunTool(server) {
         "Start a controlled non-interactive OpenCode job in a whitelisted project. This is not arbitrary shell; callers provide only projectId, prompt, and optional timeoutSeconds.",
       inputSchema: {
         projectId: z.string().min(1),
-        prompt: z.string().min(1).max(80000),
+        prompt: z.string().min(1).max(12000),
         timeoutSeconds: z.number().int().positive().max(3600).optional()
       }
     },
