@@ -124,12 +124,63 @@ curl.exe -i "$PublicBaseUrl$McpPath"`
   );
 }
 
+function oauthClientCheckScript() {
+  return section(
+    "OAuth client store",
+    `$ClientFile = Join-Path $Root 'oauth-clients.local.json'
+Write-Output "ClientStoreExists=$(Test-Path $ClientFile)"
+if (Test-Path $ClientFile) {
+  $ClientFileItem = Get-Item $ClientFile -ErrorAction SilentlyContinue
+  if ($ClientFileItem) {
+    Write-Output "ClientStoreBytes=$($ClientFileItem.Length)"
+    Write-Output "ClientStoreLastWriteUtc=$($ClientFileItem.LastWriteTimeUtc.ToString('o'))"
+  }
+  try {
+    $ClientJson = Get-Content $ClientFile -Raw | ConvertFrom-Json
+    if ($null -ne $ClientJson.clients) {
+      if ($ClientJson.clients -is [System.Array]) {
+        Write-Output "ClientCount=$(@($ClientJson.clients).Count)"
+      } else {
+        Write-Output "ClientCount=$(@($ClientJson.clients.PSObject.Properties).Count)"
+      }
+    } else {
+      Write-Output 'ClientCount=unknown_schema'
+    }
+    Write-Output 'JsonParse=OK'
+  } catch {
+    Write-Output 'JsonParse=FAILED'
+    Write-Output $_.Exception.Message
+  }
+} else {
+  Write-Output 'ClientStoreStatus=missing_expected_before_first_DCR'
+}`
+  );
+}
+
 function dnsCheckScript() {
   return section(
     "DNS check",
     `Resolve-DnsName $PublicHost -Type CNAME -Server 1.1.1.1 -ErrorAction SilentlyContinue
 Resolve-DnsName $PublicHost -Type A -Server 1.1.1.1 -ErrorAction SilentlyContinue
 Resolve-DnsName $PublicHost -Type AAAA -Server 1.1.1.1 -ErrorAction SilentlyContinue`
+  );
+}
+
+function dnsLocalCheckScript() {
+  return section(
+    "Local DNS check",
+    `Write-Output '--- system resolver ---'
+Resolve-DnsName $PublicHost -Type CNAME -ErrorAction SilentlyContinue
+Resolve-DnsName $PublicHost -Type A -ErrorAction SilentlyContinue
+Resolve-DnsName $PublicHost -Type AAAA -ErrorAction SilentlyContinue
+Write-Output '--- hosts file match ---'
+$HostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+if (Test-Path $HostsFile) {
+  Select-String -Path $HostsFile -Pattern $PublicHost -SimpleMatch -ErrorAction SilentlyContinue |
+    ForEach-Object { $_.Line }
+} else {
+  Write-Output 'hosts file not found'
+}`
   );
 }
 
@@ -170,6 +221,80 @@ Resolve-DnsName $PublicHost -Type A -Server 1.1.1.1 -ErrorAction SilentlyContinu
 Resolve-DnsName $PublicHost -Type AAAA -Server 1.1.1.1 -ErrorAction SilentlyContinue
 Write-Output '--- cloudflared log tail ---'
 Get-Content $CloudflaredLog -Tail 200 -ErrorAction SilentlyContinue`
+  );
+}
+
+function cloudflaredServiceDetailScript() {
+  return section(
+    "cloudflared service detail",
+    `Write-Output '--- service status ---'
+Get-Service cloudflared -ErrorAction SilentlyContinue |
+  Select-Object Name,Status,StartType,ServiceType,CanStop |
+  Format-List
+Write-Output '--- service metadata without command line ---'
+$CloudflaredService = Get-CimInstance Win32_Service -Filter "Name='cloudflared'" -ErrorAction SilentlyContinue
+if ($CloudflaredService) {
+  $CloudflaredService |
+    Select-Object Name,State,StartMode,StartName,ProcessId,ExitCode,ServiceSpecificExitCode |
+    Format-List
+  Write-Output "PathNamePresent=$([bool]$CloudflaredService.PathName)"
+} else {
+  Write-Output 'cloudflared service not found'
+}`
+  );
+}
+
+function cloudflaredConfigCheckScript() {
+  return section(
+    "cloudflared config check",
+    `$ConfigCandidates = @(
+  (Join-Path $env:USERPROFILE '.cloudflared\config.yml'),
+  (Join-Path $env:USERPROFILE '.cloudflared\config.yaml'),
+  (Join-Path $env:ProgramData 'cloudflared\config.yml'),
+  (Join-Path $env:ProgramData 'cloudflared\config.yaml'),
+  (Join-Path $Root 'cloudflared.yml'),
+  (Join-Path $Root 'cloudflared.yaml')
+) | Select-Object -Unique
+foreach ($ConfigPath in $ConfigCandidates) {
+  Write-Output "Candidate=$ConfigPath Exists=$(Test-Path $ConfigPath)"
+  if (Test-Path $ConfigPath) {
+    Write-Output '--- selected non-secret config keys ---'
+    Select-String -Path $ConfigPath -Pattern '^\s*(tunnel|credentials-file|ingress|hostname|service):' -ErrorAction SilentlyContinue |
+      ForEach-Object {
+        $_.Line `
+          -replace '(?i)^(\s*tunnel\s*:\s*).+$', '$1[REDACTED]' `
+          -replace '(?i)^(\s*credentials-file\s*:\s*).+$', '$1[REDACTED_PATH]'
+      }
+  }
+}
+Write-Output "Env_CLOUDFLARED_EXE_Set=$([bool]$env:CLOUDFLARED_EXE)"
+Write-Output "Env_CLOUDFLARED_LOG_Set=$([bool]$env:CLOUDFLARED_LOG)"
+Write-Output "Env_CLOUDFLARED_TUNNEL_Set=$([bool]$env:CLOUDFLARED_TUNNEL)"`
+  );
+}
+
+function cloudflaredIngressCheckScript() {
+  return section(
+    "cloudflared ingress check",
+    `Write-Output "CloudflaredExeExists=$(Test-Path $CloudflaredExe)"
+if (Test-Path $CloudflaredExe) {
+  Write-Output '--- tunnel ingress validate ---'
+  & $CloudflaredExe tunnel ingress validate
+} else {
+  Write-Output "cloudflared exe not found: $CloudflaredExe"
+}`
+  );
+}
+
+function networkProxyCheckScript() {
+  return section(
+    "Network proxy check",
+    `Write-Output '--- WinHTTP proxy ---'
+netsh winhttp show proxy
+Write-Output '--- process proxy env names only ---'
+Get-ChildItem Env:HTTP_PROXY,Env:HTTPS_PROXY,Env:ALL_PROXY,Env:NO_PROXY -ErrorAction SilentlyContinue |
+  Select-Object Name |
+  Format-Table -AutoSize`
   );
 }
 
@@ -225,19 +350,72 @@ npm run check`
   );
 }
 
+function npmDependencyCheckScript() {
+  return section(
+    "npm dependency check",
+    `Write-Output '--- package files ---'
+Test-Path (Join-Path $Root 'package.json')
+Test-Path (Join-Path $Root 'package-lock.json')
+Test-Path (Join-Path $Root 'node_modules')
+Write-Output '--- npm ls depth 0 ---'
+npm ls --depth=0 --omit=dev`
+  );
+}
+
+function gatewayConfigCheckScript() {
+  return section(
+    "Gateway config check",
+    `Write-Output '--- config file selection ---'
+Write-Output "PROJECTS_CONFIG_Set=$([bool]$env:PROJECTS_CONFIG)"
+Write-Output "projects.example.json Exists=$(Test-Path (Join-Path $Root 'projects.example.json'))"
+Write-Output "projects.local.json Exists=$(Test-Path (Join-Path $Root 'projects.local.json'))"
+Write-Output ".env.local Exists=$(Test-Path (Join-Path $Root '.env.local'))"
+Write-Output '--- projects.example.json shape ---'
+$ExampleProjects = Join-Path $Root 'projects.example.json'
+if (Test-Path $ExampleProjects) {
+  try {
+    $ExampleJson = Get-Content $ExampleProjects -Raw | ConvertFrom-Json
+    Write-Output "ExampleProjectCount=$(@($ExampleJson.projects).Count)"
+  } catch {
+    Write-Output 'ExampleJsonParse=FAILED'
+    Write-Output $_.Exception.Message
+  }
+}
+Write-Output '--- projects.local.json shape, roots hidden ---'
+$LocalProjects = Join-Path $Root 'projects.local.json'
+if (Test-Path $LocalProjects) {
+  try {
+    $LocalJson = Get-Content $LocalProjects -Raw | ConvertFrom-Json
+    Write-Output "LocalProjectCount=$(@($LocalJson.projects).Count)"
+    @($LocalJson.projects) | Select-Object id,name | Format-Table -AutoSize
+  } catch {
+    Write-Output 'LocalJsonParse=FAILED'
+    Write-Output $_.Exception.Message
+  }
+}`
+  );
+}
+
 function diagnoseAllScript() {
   return [
     checkEnvScript(),
+    gatewayConfigCheckScript(),
     checkPortsScript(),
     processNodeScript(),
     statusServicesScript(),
     gatewaySmokeScript(),
     mcpPublicSmokeScript(),
     oauthMetadataScript(),
+    oauthClientCheckScript(),
     dnsCheckScript(),
+    dnsLocalCheckScript(),
+    networkProxyCheckScript(),
     cloudflaredDiagnoseScript(),
+    cloudflaredServiceDetailScript(),
+    cloudflaredConfigCheckScript(),
     gitStatusScript(),
-    gitLogLatestScript()
+    gitLogLatestScript(),
+    npmDependencyCheckScript()
   ].join("\n");
 }
 
@@ -261,10 +439,22 @@ function getRunOpScript(op) {
       return `${diagnosticScriptHeader()}${mcpPublicSmokeScript()}`;
     case "oauth_metadata_check":
       return `${diagnosticScriptHeader()}${oauthMetadataScript()}`;
+    case "oauth_client_check":
+      return `${diagnosticScriptHeader()}${oauthClientCheckScript()}`;
     case "dns_check":
       return `${diagnosticScriptHeader()}${dnsCheckScript()}`;
+    case "dns_local_check":
+      return `${diagnosticScriptHeader()}${dnsLocalCheckScript()}`;
     case "cloudflared_diagnose":
       return `${diagnosticScriptHeader()}${cloudflaredDiagnoseScript()}`;
+    case "cloudflared_service_detail":
+      return `${diagnosticScriptHeader()}${cloudflaredServiceDetailScript()}`;
+    case "cloudflared_config_check":
+      return `${diagnosticScriptHeader()}${cloudflaredConfigCheckScript()}`;
+    case "cloudflared_ingress_check":
+      return `${diagnosticScriptHeader()}${cloudflaredIngressCheckScript()}`;
+    case "network_proxy_check":
+      return `${diagnosticScriptHeader()}${networkProxyCheckScript()}`;
     case "tail_logs":
       return `${diagnosticScriptHeader()}${tailLogsScript()}`;
     case "git_remote":
@@ -277,6 +467,10 @@ function getRunOpScript(op) {
       return `${diagnosticScriptHeader()}${gitDiffSummaryScript()}`;
     case "npm_project_check":
       return `${diagnosticScriptHeader()}${npmProjectCheckScript()}`;
+    case "npm_dependency_check":
+      return `${diagnosticScriptHeader()}${npmDependencyCheckScript()}`;
+    case "gateway_config_check":
+      return `${diagnosticScriptHeader()}${gatewayConfigCheckScript()}`;
     default:
       return "";
   }
