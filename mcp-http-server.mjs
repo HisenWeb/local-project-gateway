@@ -6,7 +6,7 @@ await loadOAuthClients();
 
 const app = createHttpMcpApp();
 
-app.listen(config.host, config.port, () => {
+app.listen(config.port, config.host, () => {
   console.log(`local-project-gateway HTTP MCP listening on http://${config.host}:${config.port}${config.mcpPath}`);
   console.log(`public MCP resource: ${config.mcpResourceUrl}`);
   console.log(`OAuth enabled: ${config.oauthEnabled}`);
