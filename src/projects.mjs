@@ -1,4 +1,4 @@
-import fs from "node:fs/promises";
+﻿import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,7 @@ export function resolveProjectsConfigPath() {
 export async function loadProjects() {
   const configPath = resolveProjectsConfigPath();
   const raw = await fs.readFile(configPath, "utf8");
-  const parsed = JSON.parse(raw);
+  const parsed = JSON.parse(String(raw || "").replace(/^\uFEFF/, ""));
   const configDir = path.dirname(configPath);
 
   if (!parsed || !Array.isArray(parsed.projects)) {
@@ -58,3 +58,5 @@ export async function findProject(projectId) {
   const projects = await loadProjects();
   return projects.find((project) => project.id === id) || null;
 }
+
+
