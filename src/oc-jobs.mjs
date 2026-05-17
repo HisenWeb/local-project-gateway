@@ -221,6 +221,7 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
     cwd: project.root,
     shell: false,
     windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env }
   });
 
@@ -313,5 +314,6 @@ export async function getOpenCodeJob(jobId) {
     resultText
   };
 }
+
 
 
