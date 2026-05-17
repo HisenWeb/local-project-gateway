@@ -79,6 +79,10 @@ function sendInternalError(res) {
   });
 }
 
+function parseJsonConfig(raw) {
+  return JSON.parse(String(raw || "").replace(/^\uFEFF/, ""));
+}
+
 function resolveProjectsConfigPath() {
   if (process.env.PROJECTS_CONFIG) {
     return path.resolve(process.env.PROJECTS_CONFIG);
@@ -94,7 +98,7 @@ function resolveProjectsConfigPath() {
 async function loadProjects() {
   const configPath = resolveProjectsConfigPath();
   const raw = await fs.readFile(configPath, "utf8");
-  const config = JSON.parse(raw);
+  const config = parseJsonConfig(raw);
   const configDir = path.dirname(configPath);
 
   if (!config || !Array.isArray(config.projects)) {
