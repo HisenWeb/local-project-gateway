@@ -7,6 +7,9 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const exampleProjectsConfig = path.join(repoRoot, "projects.example.json");
 const localProjectsConfig = path.join(repoRoot, "projects.local.json");
 
+const MAX_MODEL_CHARS = 200;
+const MODEL_RE = /^[a-zA-Z][a-zA-Z0-9._-]*\/[a-zA-Z][a-zA-Z0-9._-]+$/;
+
 export function resolveProjectsConfigPath() {
   if (process.env.PROJECTS_CONFIG) {
     return path.resolve(process.env.PROJECTS_CONFIG);
@@ -45,10 +48,19 @@ export async function loadProjects() {
       ? path.resolve(rootInput)
       : path.resolve(configDir, rootInput);
 
+    const model = (() => {
+      const raw = String(project.model ?? "").trim();
+      if (!raw) return null;
+      if (raw.length > MAX_MODEL_CHARS) throw new Error(`${path.basename(configPath)} contains project with invalid model`);
+      if (!MODEL_RE.test(raw)) throw new Error(`${path.basename(configPath)} contains project with invalid model`);
+      return raw;
+    })();
+
     return {
       id,
       name: String(project.name || id),
-      root
+      root,
+      model
     };
   });
 }

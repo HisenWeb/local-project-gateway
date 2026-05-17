@@ -67,11 +67,14 @@ Use `projects.local.json` for real local absolute paths:
     {
       "id": "my-project",
       "name": "My Project",
-      "root": "D:\\path\\to\\project"
+      "root": "D:\\path\\to\\project",
+      "model": "deepseek/deepseek-v4-pro"
     }
   ]
 }
 ```
+
+The optional `model` field sets the default OpenCode model for the project (e.g. `deepseek/deepseek-v4-pro` or `anthropic/claude-sonnet-4-5`). The `oc_run` `model` argument overrides this per job. If neither is set, OpenCode runs without a `-m` flag and uses its own defaults.
 
 Do not commit `projects.local.json`.
 
@@ -157,9 +160,12 @@ Output is bounded and redacted for common token, secret, password, private-key, 
 {
   "projectId": "my-project",
   "prompt": "Run a small validation task and report the result.",
-  "timeoutSeconds": 1800
+  "timeoutSeconds": 1800,
+  "model": "deepseek/deepseek-v4-pro"
 }
 ```
+
+The `model` field is optional. If provided it overrides the project default model. If neither is set, OpenCode runs without a `-m` flag.
 
 Execution is fixed to this shape:
 

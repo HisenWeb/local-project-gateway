@@ -1,3 +1,10 @@
 {
-  "projects": []
+  "projects": [
+    {
+      "id": "example-project",
+      "name": "Example Project",
+      "root": "./example-project",
+      "model": "opencode/qwen3.6-plus-free"
+    }
+  ]
 }

@@ -17,6 +17,8 @@ const STDOUT_TAIL_CHARS = 8000;
 const STDERR_TAIL_CHARS = 8000;
 const RESULT_TEXT_CHARS = 12000;
 const MAX_PROMPT_CHARS = 12_000;
+const MAX_MODEL_CHARS = 200;
+const MODEL_RE = /^[a-zA-Z][a-zA-Z0-9._-]*\/[a-zA-Z][a-zA-Z0-9._-]+$/;
 const SAFETY_PREFIX = `Safety boundary for this local OpenCode job:
 - Do not read, print, copy, or summarize environment variables, tokens, secrets, SSH keys, private keys, OAuth credentials, Cloudflare credentials, or local credential files.
 - Do not run git commit, git push, npm install, service install, or destructive commands unless the user explicitly requested that outside this bridge.
@@ -160,9 +162,16 @@ function buildEffectivePrompt(prompt) {
   return `${SAFETY_PREFIX}\n\nUser task:\n${prompt}`;
 }
 
-export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
+export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds, model }) {
   const normalizedProjectId = String(projectId || "").trim();
   const normalizedPrompt = String(prompt || "").trim();
+  const normalizedModel = (() => {
+    const raw = String(model ?? "").trim();
+    if (!raw) return null;
+    if (raw.length > MAX_MODEL_CHARS) throw new Error("MODEL_TOO_LARGE");
+    if (!MODEL_RE.test(raw)) throw new Error("MODEL_INVALID_FORMAT");
+    return raw;
+  })();
 
   if (!normalizedProjectId) {
     throw new Error("PROJECT_ID_REQUIRED");
@@ -180,6 +189,8 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   if (!project) {
     throw new Error("PROJECT_NOT_FOUND");
   }
+
+  const effectiveModel = normalizedModel || project.model || null;
 
   const effectivePrompt = buildEffectivePrompt(normalizedPrompt);
   const timeout = clampTimeoutSeconds(timeoutSeconds);
@@ -207,7 +218,11 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   await writeJsonAtomic(path.join(jobDir, "job.json"), {
     jobId,
     projectId: project.id,
-    command: "opencode run --dir <projectRoot> <prompt>",
+    command: effectiveModel
+      ? `opencode run -m ${effectiveModel} --dir <projectRoot> <prompt>`
+      : "opencode run --dir <projectRoot> <prompt>",
+    model: effectiveModel || null,
+    requestedModel: normalizedModel || null,
     timeoutSeconds: timeout,
     createdAt
   });
@@ -217,7 +232,13 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   await fs.writeFile(path.join(jobDir, "result.txt"), "", "utf8");
 
   const opencode = opencodeSpawnSpec();
-  const child = spawn(opencode.command, [...opencode.argsPrefix, "run", "--dir", project.root, effectivePrompt], {
+  const runArgs = ["run"];
+  if (effectiveModel) {
+    runArgs.push("-m", effectiveModel);
+  }
+  runArgs.push("--dir", project.root, effectivePrompt);
+
+  const child = spawn(opencode.command, [...opencode.argsPrefix, ...runArgs], {
     cwd: project.root,
     shell: false,
     windowsHide: true,
