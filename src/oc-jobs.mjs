@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+﻿import { spawn } from "node:child_process";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
@@ -101,9 +102,58 @@ async function updateStatus(jobDir, patch) {
   return next;
 }
 
-function opencodeCommand() {
-  if (process.env.OPENCODE_BIN) return process.env.OPENCODE_BIN;
-  return process.platform === "win32" ? "opencode.cmd" : "opencode";
+function findOnPath(fileName) {
+  const pathValue = process.env.PATH || process.env.Path || process.env.path || "";
+
+  for (const dir of pathValue.split(path.delimiter)) {
+    const cleanDir = String(dir || "").replace(/^"|"$/g, "");
+    if (!cleanDir) continue;
+
+    const candidate = path.join(cleanDir, fileName);
+    if (fsSync.existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function opencodeSpawnSpec() {
+  if (process.env.OPENCODE_BIN) {
+    return {
+      command: process.env.OPENCODE_BIN,
+      argsPrefix: []
+    };
+  }
+
+  if (process.platform === "win32") {
+    const cmdPath = findOnPath("opencode.cmd");
+
+    if (cmdPath) {
+      const scriptPath = path.join(
+        path.dirname(cmdPath),
+        "node_modules",
+        "opencode-ai",
+        "bin",
+        "opencode"
+      );
+
+      if (fsSync.existsSync(scriptPath)) {
+        return {
+          command: process.execPath,
+          argsPrefix: [scriptPath]
+        };
+      }
+    }
+
+    return {
+      command: "opencode.cmd",
+      argsPrefix: []
+    };
+  }
+
+  return {
+    command: "opencode",
+    argsPrefix: []
+  };
 }
 
 function buildEffectivePrompt(prompt) {
@@ -166,7 +216,8 @@ export async function startOpenCodeJob({ projectId, prompt, timeoutSeconds }) {
   await fs.writeFile(path.join(jobDir, "stderr.log"), "", "utf8");
   await fs.writeFile(path.join(jobDir, "result.txt"), "", "utf8");
 
-  const child = spawn(opencodeCommand(), ["run", "--dir", project.root, effectivePrompt], {
+  const opencode = opencodeSpawnSpec();
+  const child = spawn(opencode.command, [...opencode.argsPrefix, "run", "--dir", project.root, effectivePrompt], {
     cwd: project.root,
     shell: false,
     windowsHide: true,
@@ -262,3 +313,5 @@ export async function getOpenCodeJob(jobId) {
     resultText
   };
 }
+
+
